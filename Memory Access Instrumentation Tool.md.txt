@@ -1,0 +1,116 @@
+Memory Access Instrumentation Tool
+Overview
+This tool is designed to analyze the memory access patterns of variables within a program by leveraging instrumentation. It tracks key metrics such as memory access addresses, stride distributions, and access frequencies to generate detailed reports. Based on this data, the tool can also suggest an optimal caching strategy to improve performance.
+
+Features
+Memory Access Tracking:
+
+Tracks the memory address range of variables.
+Counts the number of times each variable is accessed.
+Analyzes the distribution and proportion of memory access strides.
+Dynamic Cache Strategy Generation:
+
+Automatically generates suitable cache configuration strategies based on a variable's access patterns.
+Supports dynamic adjustment for various cache line sizes and capacities.
+Formatted Output:
+
+Provides clear and structured memory access reports.
+The output includes the function name, variable name, address range, access count, stride distribution, and the recommended cache policy.
+Flexibility:
+
+Supports instrumentation for variables of any data type.
+The instrumentation code can be embedded into existing C/C++ code with minimal changes to the original logic.
+How to Use
+1. Include the Header File
+Ensure your project includes the necessary header file:
+
+c
+#include "mem.h"
+2. Define Structures and Constants
+The tool uses the memory_info_t struct to store access information. You may need to define or adjust constants according to your target architecture.
+
+c
+#define MEMORY_PRO_MAX_NUM 16
+#define SM_CAPACITY 8192 // 8KB in bytes
+#define CACHE_LINE_SIZE_4KB 1024 // 4KB line size in bytes
+#define CACHE_LINE_SIZE_128B 128 // 128B line size in bytes
+
+typedef struct {
+    char function_name[64];
+    char variable_name[256];
+    char variable_type[64];
+    unsigned long address_begin;
+    unsigned long address_end;
+    unsigned long accessed;
+    unsigned long memory_step[MEMORY_PRO_MAX_NUM];
+    unsigned long memory_step_pro[MEMORY_PRO_MAX_NUM];
+    unsigned long variable_size;
+    unsigned long sorted_steps[MEMORY_PRO_MAX_NUM];
+    float sorted_pro[MEMORY_PRO_MAX_NUM];
+    size_t type_size;  // Size of the variable's data type
+} memory_info_t;
+3. Initialize and Finalize Instrumentation
+Use start_instrumentation and end_instrumentation to begin and end the memory access tracking for a specific variable. These should typically wrap the section of code you want to analyze.
+
+c
+static inline void start_instrumentation(const char* var_name, void* var_ptr, size_t type_size, memory_info_t* mem_info);
+static inline void end_instrumentation(memory_info_t* mem_info);
+4. Record Memory Access
+Inside the code block being analyzed, call record_memory_access every time an element of the target variable (e.g., an array element) is accessed.
+
+c
+static inline void record_memory_access(memory_info_t* mem_info, unsigned long current_addr);
+5. Print Memory Information
+After end_instrumentation is called, use hprint_memory_info to print the collected memory access report and the suggested caching strategy.
+
+c
+static inline void hprint_memory_info(const memory_info_t *info);
+Usage Example
+Here is an example demonstrating how to integrate the instrumentation functions into a daxpy_single function.
+
+c
+// Original function
+static inline void daxpy_single(uint64_t n, double a, double *x, double *y)
+{
+    for (uint64_t i = 0; i < n; ++i) {
+        y[i] = a * x[i] + y[i];
+    }
+}
+
+// Instrumented version of the function
+static inline void daxpy_single_pro(uint64_t n, double a, double *x, double *y)
+{
+    // Define and initialize memory info structs
+    memory_info_t x_mem_info;
+    strncpy(x_mem_info.function_name, "daxpy_single", sizeof(x_mem_info.function_name) - 1);
+
+    memory_info_t y_mem_info;
+    strncpy(y_mem_info.function_name, "daxpy_single", sizeof(y_mem_info.function_name) - 1);
+
+    // Start instrumentation for each variable.
+    // This should be done once per variable before the loop.
+    start_instrumentation("x", (void *)x, sizeof(double), &x_mem_info);
+    start_instrumentation("y", (void *)y, sizeof(double), &y_mem_info);
+
+    for (uint64_t i = 0; i < n; ++i) {
+        // Record the access to x and y (read operations)
+        record_memory_access(&x_mem_info, (unsigned long)&x[i]);
+        record_memory_access(&y_mem_info, (unsigned long)&y[i]);
+
+        y[i] = a * x[i] + y[i];
+
+        // Record the access to y again (for the write operation)
+        record_memory_access(&y_mem_info, (unsigned long)&y[i]);
+    }
+
+    // End instrumentation and print the report for each variable.
+    // This should be done once after the loop.
+    end_instrumentation(&x_mem_info);
+    hprint_memory_info(&x_mem_info);
+
+    end_instrumentation(&y_mem_info);
+    hprint_memory_info(&y_mem_info);
+}
+Important Notes
+Ensure that all required functions, structs, and macro definitions are available in your compilation environment.
+The instrumentation code will introduce performance overhead. It should only be enabled during debugging or performance analysis phases, and disabled for production builds.
